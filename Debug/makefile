@@ -71,7 +71,7 @@ main-build: 2.FreeRTOS_STM32F407VG_BME280.elf secondary-outputs
 
 # Tool invocations
 2.FreeRTOS_STM32F407VG_BME280.elf: $(OBJS) $(USER_OBJS) /home/odemki/work/projects/my_projects/STM32/projects/FreeRTOS/2.FreeRTOS_STM32F407VG_BME280/STM32F407VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "2.FreeRTOS_STM32F407VG_BME280.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/odemki/work/projects/my_projects/STM32/projects/FreeRTOS/2.FreeRTOS_STM32F407VG_BME280/STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="2.FreeRTOS_STM32F407VG_BME280.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+	arm-none-eabi-gcc -o "2.FreeRTOS_STM32F407VG_BME280.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/odemki/work/projects/my_projects/STM32/projects/FreeRTOS/2.FreeRTOS_STM32F407VG_BME280/STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="2.FreeRTOS_STM32F407VG_BME280.map" -Wl,--gc-sections -static -u_print_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

@@ -28,6 +28,7 @@
 #include "string.h"
 #include "usbd_cdc_if.h"
 #include "task.h"
+#include <stdio.h>
 
 #include "BME280/bme280_defs.h"
 #include "BME280/bme280.h"
@@ -117,7 +118,7 @@ const osThreadAttr_t UART_Task_attributes = {
 };
 /* Definitions for bme280 */
 osThreadId_t bme280Handle;
-uint32_t bme280Buffer[ 256 ];
+uint32_t bme280Buffer[ 2048 ];
 osStaticThreadDef_t bme280ControlBlock;
 const osThreadAttr_t bme280_attributes = {
   .name = "bme280",
@@ -602,7 +603,7 @@ void Start_Show_Resources(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  osDelay(2000);												// Every 5 second task management will print data
+	  osDelay(5000);												// Every 5 second task management will print data
 
 	  char str_end_of_line[3] = {'\r','\n'};
 	  char str_sig = '-';
@@ -700,6 +701,10 @@ void Start_bme280(void *argument)
 {
   /* USER CODE BEGIN Start_bme280 */
   /* Infinite loop */
+
+	QUEUE_t msg;
+	memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
+
 	uint16_t STATUS=0;
 	uint16_t addres_device = 0x76;  		 	// BME280
 	uint16_t id_addr = 0xD0;
@@ -744,6 +749,7 @@ void Start_bme280(void *argument)
   for(;;)
   {
 	  osDelay(1000);
+	  memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
 	  rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, &dev);
 
 	  if(rslt == BME280_OK)
@@ -753,8 +759,31 @@ void Start_bme280(void *argument)
 	  		float BME280_humidity = comp_data.humidity;
 	  		float BME280_preasure = comp_data.pressure;
 
+	  		char str_t_h_and_p[50] = {0};
+	  		char str_thp_buffer[12] = {0};
+	  		//strcat(str_t_h_and_p, "BEE280: \n\r\0");
 
-           //  ДОДАТИ ДАНІ В ЧЕРГУ USRT !!!!
+	  		//НЕ ЗАПИСУЄТЬСЯ В ЧЕРГУ !!!
+	  		strcat(msg.Buf, "BEE280: \n\r");
+	  		strcat(str_t_h_and_p, "T: ");
+	  		sprintf(str_thp_buffer, "%f", BME280_temperature);
+	  		strcat(str_t_h_and_p, str_thp_buffer);
+	  		strcat(str_t_h_and_p, " C\n\r\0");
+	  		strcat(msg.Buf, str_t_h_and_p);
+
+	  		memset(str_thp_buffer,0, sizeof(str_thp_buffer));
+	  		memset(str_t_h_and_p,0, sizeof(str_t_h_and_p));
+
+//	  		strcat(str_t_h_and_p, "H: ");
+//	  		sprintf(str_thp_buffer, "%f", BME280_humidity);
+//	  		strcat(str_t_h_and_p, str_thp_buffer);
+//	  		strcat(str_t_h_and_p, " %\n\r\0");
+//	  		strcat(msg.Buf, str_t_h_and_p);
+
+
+
+	  		osMessageQueuePut(UARTQueueHandle, &msg, 0, osWaitForever);
+
 	  }
 
   }
