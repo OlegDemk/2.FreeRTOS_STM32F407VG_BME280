@@ -29,6 +29,9 @@
 #include "usbd_cdc_if.h"
 #include "task.h"
 
+#include "BME280/bme280_defs.h"
+#include "BME280/bme280.h"
+
 // TODO:
 //
 //1. Добавити Virtual Comport   DONE
@@ -60,6 +63,8 @@ int freemem = 0;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c3;
+
 TIM_HandleTypeDef htim3;
 
 /* Definitions for defaultTask */
@@ -110,6 +115,18 @@ const osThreadAttr_t UART_Task_attributes = {
   .stack_size = sizeof(UART_TaskBuffer),
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for bme280 */
+osThreadId_t bme280Handle;
+uint32_t bme280Buffer[ 256 ];
+osStaticThreadDef_t bme280ControlBlock;
+const osThreadAttr_t bme280_attributes = {
+  .name = "bme280",
+  .cb_mem = &bme280ControlBlock,
+  .cb_size = sizeof(bme280ControlBlock),
+  .stack_mem = &bme280Buffer[0],
+  .stack_size = sizeof(bme280Buffer),
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for UARTQueue */
 osMessageQueueId_t UARTQueueHandle;
 uint8_t UARTQueueBuffer[ 10 * sizeof( QUEUE_t ) ];
@@ -123,16 +140,55 @@ const osMessageQueueAttr_t UARTQueue_attributes = {
 };
 /* USER CODE BEGIN PV */
 
+
+
+// BME280 part /////////////////////////////////////////////////////////////////////////////////////
+struct bme280_dev dev;
+struct bme280_data comp_data;
+int8_t rslt;
+
+int8_t init_bme280(void);
+void bme280_measure(void);
+
+//----------------------------------------------------------------------------------------
+int8_t user_i2c_read(uint8_t id, uint8_t reg_addr, uint8_t *data, uint16_t len)
+{
+  if(HAL_I2C_Master_Transmit(&hi2c3, (id << 1), &reg_addr, 1, 10) != HAL_OK) return -1;
+  if(HAL_I2C_Master_Receive(&hi2c3, (id << 1) | 0x01, data, len, 10) != HAL_OK) return -1;
+
+  return 0;
+}
+//----------------------------------------------------------------------------------------
+void user_delay_ms(uint32_t period)
+{
+  HAL_Delay(period);
+}
+//----------------------------------------------------------------------------------------
+int8_t user_i2c_write(uint8_t id, uint8_t reg_addr, uint8_t *data, uint16_t len)
+{
+  int8_t *buf;
+  buf = malloc(len +1);
+  buf[0] = reg_addr;
+  memcpy(buf +1, data, len);
+
+  if(HAL_I2C_Master_Transmit(&hi2c3, (id << 1), (uint8_t*)buf, len + 1, HAL_MAX_DELAY) != HAL_OK) return -1;
+
+  free(buf);
+  return 0;
+}
+// End BME280 part/////////////////////////////////////////////////////////////////////////////////////
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_I2C3_Init(void);
 void StartDefaultTask(void *argument);
 void Start_Blue_LED_Blink(void *argument);
 void Start_Show_Resources(void *argument);
 void Start_UART_Task(void *argument);
+void Start_bme280(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -172,6 +228,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM3_Init();
+  MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim3);		//  This TIM3 using for calculate how many time all tasks was running.
   /* USER CODE END 2 */
@@ -211,6 +268,9 @@ int main(void)
 
   /* creation of UART_Task */
   UART_TaskHandle = osThreadNew(Start_UART_Task, NULL, &UART_Task_attributes);
+
+  /* creation of bme280 */
+  bme280Handle = osThreadNew(Start_bme280, NULL, &bme280_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -276,6 +336,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.ClockSpeed = 100000;
+  hi2c3.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
+
 }
 
 /**
@@ -466,8 +560,7 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
-	  osDelay(1000);
+	  osDelay(1);
 
   }
   /* USER CODE END 5 */
@@ -594,6 +687,78 @@ void Start_UART_Task(void *argument)
     osDelay(1);
   }
   /* USER CODE END Start_UART_Task */
+}
+
+/* USER CODE BEGIN Header_Start_bme280 */
+/**
+* @brief Function implementing the bme280 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_bme280 */
+void Start_bme280(void *argument)
+{
+  /* USER CODE BEGIN Start_bme280 */
+  /* Infinite loop */
+	uint16_t STATUS=0;
+	uint16_t addres_device = 0x76;  		 	// BME280
+	uint16_t id_addr = 0xD0;
+	uint8_t id = 96;							// in hex form
+	uint8_t buff=0;        						// Return 0x96 -> Dec 60
+
+	STATUS = HAL_I2C_Mem_Read(&hi2c3, addres_device<<1, id_addr, 1, &buff, 1, 1000);
+	//HAL_OK == 0
+	if((buff == id) && (STATUS == 0))
+	{
+		//i2c_device.BME280_ready_status = true;
+		int ggg = 0;
+	}
+	else
+	{
+		int fff = 0;
+		//i2c_device.BME280_ready_status = false;
+	}
+
+
+
+	// Init BME280
+	dev.dev_id = BME280_I2C_ADDR_PRIM;
+	dev.intf = BME280_I2C_INTF;
+	dev.read = user_i2c_read;
+	dev.write = user_i2c_write;
+	dev.delay_ms = user_delay_ms;
+
+	rslt = bme280_init(&dev);
+
+	dev.settings.osr_h = BME280_OVERSAMPLING_1X;
+	dev.settings.osr_p = BME280_OVERSAMPLING_16X;
+	dev.settings.osr_t = BME280_OVERSAMPLING_2X;
+	dev.settings.filter = BME280_FILTER_COEFF_16;
+	rslt = bme280_set_sensor_settings(BME280_OSR_PRESS_SEL | BME280_OSR_TEMP_SEL | BME280_OSR_HUM_SEL | BME280_FILTER_SEL, &dev);
+
+	//	  rslt = bme280_set_sensor_mode(BME280_FORCED_MODE, &dev);
+	rslt = bme280_set_sensor_mode(BME280_NORMAL_MODE, &dev);
+
+	dev.delay_ms(40);
+
+  for(;;)
+  {
+	  osDelay(1000);
+	  rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, &dev);
+
+	  if(rslt == BME280_OK)
+	  {
+	  		// Save data in main structure
+	  		float BME280_temperature = comp_data.temperature;
+	  		float BME280_humidity = comp_data.humidity;
+	  		float BME280_preasure = comp_data.pressure;
+
+
+           //  ДОДАТИ ДАНІ В ЧЕРГУ USRT !!!!
+	  }
+
+  }
+  /* USER CODE END Start_bme280 */
 }
 
 /**
