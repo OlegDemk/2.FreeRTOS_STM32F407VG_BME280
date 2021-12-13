@@ -11,5 +11,5 @@ main.c:577:6:Start_Blue_LED_Blink	16	static
 main.c:600:6:Start_Show_Resources	1176	static
 main.c:671:6:Start_UART_Task	1048	static
 main.c:700:6:Start_bme280	1152	static
-main.c:801:6:HAL_TIM_PeriodElapsedCallback	16	static
-main.c:821:6:Error_Handler	4	static,ignoring_inline_asm
+main.c:807:6:HAL_TIM_PeriodElapsedCallback	16	static
+main.c:827:6:Error_Handler	4	static,ignoring_inline_asm

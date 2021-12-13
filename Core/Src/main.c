@@ -118,7 +118,7 @@ const osThreadAttr_t UART_Task_attributes = {
 };
 /* Definitions for bme280 */
 osThreadId_t bme280Handle;
-uint32_t bme280Buffer[ 2048 ];
+uint32_t bme280Buffer[ 1024 ];
 osStaticThreadDef_t bme280ControlBlock;
 const osThreadAttr_t bme280_attributes = {
   .name = "bme280",
@@ -702,7 +702,7 @@ void Start_bme280(void *argument)
   /* USER CODE BEGIN Start_bme280 */
   /* Infinite loop */
 
-	QUEUE_t msg;
+	QUEUE_t msg;												// Make a queue
 	memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
 
 	uint16_t STATUS=0;
@@ -711,19 +711,16 @@ void Start_bme280(void *argument)
 	uint8_t id = 96;							// in hex form
 	uint8_t buff=0;        						// Return 0x96 -> Dec 60
 
+	// For debug
 	STATUS = HAL_I2C_Mem_Read(&hi2c3, addres_device<<1, id_addr, 1, &buff, 1, 1000);
-	//HAL_OK == 0
 	if((buff == id) && (STATUS == 0))
 	{
-		//i2c_device.BME280_ready_status = true;
-		int ggg = 0;
+		// BME280 founded
 	}
 	else
 	{
-		int fff = 0;
-		//i2c_device.BME280_ready_status = false;
+		// Error !!! BME280 didn't found
 	}
-
 
 
 	// Init BME280
@@ -741,7 +738,6 @@ void Start_bme280(void *argument)
 	dev.settings.filter = BME280_FILTER_COEFF_16;
 	rslt = bme280_set_sensor_settings(BME280_OSR_PRESS_SEL | BME280_OSR_TEMP_SEL | BME280_OSR_HUM_SEL | BME280_FILTER_SEL, &dev);
 
-	//	  rslt = bme280_set_sensor_mode(BME280_FORCED_MODE, &dev);
 	rslt = bme280_set_sensor_mode(BME280_NORMAL_MODE, &dev);
 
 	dev.delay_ms(40);
@@ -749,41 +745,51 @@ void Start_bme280(void *argument)
   for(;;)
   {
 	  osDelay(1000);
-	  memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
-	  rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, &dev);
+
+	  char str_t_h_and_p[50] = {0};
+	  char str_thp_buffer[12] = {0};
+
+	  memset(msg.Buf, 0, sizeof(msg.Buf));								// Fill in buff '\0'
+	  rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, &dev);		// Get data from sensor
 
 	  if(rslt == BME280_OK)
 	  {
-	  		// Save data in main structure
+	  		// Save data variables
 	  		float BME280_temperature = comp_data.temperature;
 	  		float BME280_humidity = comp_data.humidity;
 	  		float BME280_preasure = comp_data.pressure;
 
-	  		char str_t_h_and_p[50] = {0};
-	  		char str_thp_buffer[12] = {0};
-	  		//strcat(str_t_h_and_p, "BEE280: \n\r\0");
-
-	  		//НЕ ЗАПИСУЄТЬСЯ В ЧЕРГУ !!!
-	  		strcat(msg.Buf, "BEE280: \n\r");
+	  		// Write T, H and P in str_t_h_and_p buffer
+	  		// Write TEMPERATURE
+	  		strcat(str_t_h_and_p, "BEE280: \n\r");
 	  		strcat(str_t_h_and_p, "T: ");
 	  		sprintf(str_thp_buffer, "%f", BME280_temperature);
 	  		strcat(str_t_h_and_p, str_thp_buffer);
-	  		strcat(str_t_h_and_p, " C\n\r\0");
-	  		strcat(msg.Buf, str_t_h_and_p);
+	  		strcat(str_t_h_and_p, " C\n\r");
 
-	  		memset(str_thp_buffer,0, sizeof(str_thp_buffer));
-	  		memset(str_t_h_and_p,0, sizeof(str_t_h_and_p));
+	  		// Write HUMIDYTY
+	  		memset(str_thp_buffer, 0, sizeof(str_thp_buffer));
+	  		strcat(str_t_h_and_p, "H: ");
+	  		sprintf(str_thp_buffer, "%f", BME280_humidity);
+	  		strcat(str_t_h_and_p, str_thp_buffer);
+	  		strcat(str_t_h_and_p, " C\n\r");
 
-//	  		strcat(str_t_h_and_p, "H: ");
-//	  		sprintf(str_thp_buffer, "%f", BME280_humidity);
-//	  		strcat(str_t_h_and_p, str_thp_buffer);
-//	  		strcat(str_t_h_and_p, " %\n\r\0");
-//	  		strcat(msg.Buf, str_t_h_and_p);
+	  		// Write PRERASURE
+	  		memset(str_thp_buffer, 0, sizeof(str_thp_buffer));
+	  		strcat(str_t_h_and_p, "P: ");
+	  		sprintf(str_thp_buffer, "%f", BME280_preasure);
+	  		strcat(str_t_h_and_p, str_thp_buffer);
+	  		strcat(str_t_h_and_p, " mm\n\r\0");
 
+	  		strcat(msg.Buf, str_t_h_and_p);										//	Write main buffer with data in queue
 
+	  		osMessageQueuePut(UARTQueueHandle, &msg, 0, osWaitForever);			// Write data on queue (In will print on StartUART_Task task)
 
-	  		osMessageQueuePut(UARTQueueHandle, &msg, 0, osWaitForever);
-
+	  }
+	  else
+	  {
+		  strcat(str_t_h_and_p, "ERROR!!! BME280 didn't found\n\r");
+		  osMessageQueuePut(UARTQueueHandle, &msg, 0, osWaitForever);			// Write data on queue (In will print on StartUART_Task task)
 	  }
 
   }
